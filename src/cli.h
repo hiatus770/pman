@@ -127,7 +127,6 @@ void repl(char* directory) {
         return;
     }
 
-    // Prompt for the vault password using your secure input.
     char* password = (char*)secure_malloc(100);
     secure_read(&password, "Enter vault password: ");
     if (!password) {
@@ -135,7 +134,6 @@ void repl(char* directory) {
         return;
     }
 
-    // Generate key from the password.
     unsigned char* key = generate_key_256(password, strlen(password), v->salt, key);
     if (!key) {
         fprintf(stderr, "Key generation failed.\n");
@@ -143,27 +141,23 @@ void repl(char* directory) {
         return;
     }
 
-    // Decrypt the vault using the provided key.
     decrypt_vault(v, key);
-
-    // Clear and free the vault password.
     memset(password, 0, strlen(password));
     secure_free(password, 100);
 
     const char *parse_end = NULL;
     cJSON *json_array = cJSON_ParseWithLengthOpts((char*)v->data, v->data_length, &parse_end, 0);
-    if (!json_array){
+    if (!json_array) {
         printf("Wrong password\n");
-        // printf("Raw data: ");
-        // print_bytes(v->data, v->data_length);
         return;
     }
+    cJSON_Delete(json_array);
 
-    printf("Vault open. Available commands: list, add, modify, exit\n");
-    print_bytes(v->data, v->data_length);
+    printf("Vault open. Available commands: list, add, modify, info, write, exit\n");
 
     char command[256];
-    while (1) {
+    int running = 1;
+    while (running) {
         printf("pman> ");
         if (!fgets(command, sizeof(command), stdin))
             break;
@@ -171,125 +165,201 @@ void repl(char* directory) {
         if (len > 0 && command[len - 1] == '\n')
             command[len - 1] = '\0';
 
-        if (strcmp(command, "list") == 0) {
-            const char *parse_end = NULL;
-            cJSON *json_array = cJSON_ParseWithLengthOpts((char*)v->data, v->data_length, &parse_end, 0);
-            if (!json_array) {
-                printf("Error parsing vault entries.\n");
-            } else {
-                int count = cJSON_GetArraySize(json_array);
-                printf("Vault entries (%d):\n", count);
-                for (int i = 0; i < count; i++){
-                    cJSON *entry = cJSON_GetArrayItem(json_array, i);
-                    char* entry_str = cJSON_PrintUnformatted(entry);
-                    cJSON *url = cJSON_GetObjectItem(entry, entry_field_string[URL]);
-                    printf("[%d] %s\n", i, cJSON_PrintUnformatted(url));
-                    free(entry_str);
-                }
-                cJSON_Delete(json_array);
-            }
-        }
-        else if (strcmp(command, "add") == 0) {
-            char email[256], notes[256], url[256];
-            printf("Enter email: ");
-            if (!fgets(email, sizeof(email), stdin))
-                continue;
-            email[strcspn(email, "\n")] = '\0';
+        enum { CMD_UNKNOWN, CMD_LIST, CMD_ADD, CMD_MODIFY, CMD_INFO, CMD_WRITE, CMD_EDIT, CMD_EXIT } cmd = CMD_UNKNOWN;
+        if (strcmp(command, "list") == 0) cmd = CMD_LIST;
+        else if (strcmp(command, "add") == 0) cmd = CMD_ADD;
+        else if (strcmp(command, "modify") == 0) cmd = CMD_MODIFY;
+        else if (strcmp(command, "info") == 0) cmd = CMD_INFO;
+        else if (strcmp(command, "write") == 0) cmd = CMD_WRITE;
+        else if (strcmp(command, "edit") == 0) cmd = CMD_EDIT;
+        else if (strcmp(command, "exit") == 0) cmd = CMD_EXIT;
 
-            // Generate a secure auto-generated password.
-            char auto_pass[(PASSWORD_BYTES * 2) + 1];
-            gen_secure_password(auto_pass, sizeof(auto_pass));
-            printf("Using auto-generated secure password: %s\n", auto_pass);
-
-            printf("Enter notes: ");
-            if (!fgets(notes, sizeof(notes), stdin))
-                continue;
-            notes[strcspn(notes, "\n")] = '\0';
-
-            printf("Enter URL: ");
-            if (!fgets(url, sizeof(url), stdin))
-                continue;
-            url[strcspn(url, "\n")] = '\0';
-
-            // Call add_entry to update the vault data.
-            // Adjust add_entry to have the following signature:
-            // void add_entry(vault* v, char* email, char* password, char* notes, char* url);
-            add_entry(v, email, auto_pass, notes, url);
-            printf("Entry added.\n");
-        }
-        else if (strcmp(command, "modify") == 0) {
-            char index_str[16];
-            printf("Enter index to modify: ");
-            if (!fgets(index_str, sizeof(index_str), stdin))
-                continue;
-            int index = atoi(index_str);
-
-            printf("Enter new notes: ");
-            char new_notes[256];
-            if (!fgets(new_notes, sizeof(new_notes), stdin))
-                continue;
-            new_notes[strcspn(new_notes, "\n")] = '\0';
-
-            // Parse the existing JSON.
-            const char *parse_end = NULL;
-            cJSON *json_array = cJSON_ParseWithLengthOpts((char*)v->data, v->data_length, &parse_end, 0);
-
-            if (!json_array) {
-                printf("Error parsing vault for modification.\n");
-            } else {
-                cJSON *entry = cJSON_GetArrayItem(json_array, index);
-                if (entry) {
-                    // Update the "notes" field.
-                    cJSON *notes_obj = cJSON_GetObjectItem(entry, "notes");
-                    if (notes_obj) {
-                        cJSON_SetValuestring(notes_obj, new_notes);
-                    } else {
-                        cJSON_AddStringToObject(entry, "notes", new_notes);
+        switch (cmd) {
+            case CMD_LIST: {
+                const char *parse_end = NULL;
+                cJSON *json_array = cJSON_ParseWithLengthOpts((char*)v->data, v->data_length, &parse_end, 0);
+                if (!json_array) {
+                    printf("Error parsing vault entries.\n");
+                } else {
+                    int count = cJSON_GetArraySize(json_array);
+                    printf("Vault entries (%d):\n", count);
+                    for (int i = 0; i < count; i++) {
+                        cJSON *entry = cJSON_GetArrayItem(json_array, i);
+                        cJSON *url = cJSON_GetObjectItem(entry, entry_field_string[URL]);
+                        printf("[%d] %s\n", i, cJSON_PrintUnformatted(url));
                     }
+                    cJSON_Delete(json_array);
                 }
-                else {
-                    printf("No entry at index %d.\n", index);
-                }
-                // Serialize and update the vault data.
-                char* updated_data = cJSON_PrintUnformatted(json_array);
-                if (updated_data) {
-                    secure_free(v->data, v->data_length);
-                    int new_length = strlen(updated_data);
-                    v->data = (unsigned char*)secure_malloc(new_length + 1);
-                    memcpy(v->data, updated_data, new_length + 1);
-                    v->data_length = new_length;
-                    free(updated_data);
-                    printf("Entry modified.\n");
-                }
-                cJSON_Delete(json_array);
+                break;
             }
-        }
-        else if (strcmp(command, "write") == 0){
-            encrypt_vault(v, key);
-            write_vault(v, directory);
-            decrypt_vault(v, key);
-        }
-        else if (strcmp(command, "exit") == 0) {
-            break;
-        }
-        else {
-            printf("Unknown command. Available commands: list, add, modify, exit.\n");
+            case CMD_ADD: {
+                char email[256], notes[256], url[256];
+                printf("Enter email: ");
+                if (!fgets(email, sizeof(email), stdin))
+                    break;
+                email[strcspn(email, "\n")] = '\0';
+
+                char auto_pass[(PASSWORD_BYTES * 2) + 1];
+                gen_secure_password(auto_pass, sizeof(auto_pass));
+                printf("Using auto-generated secure password: %s\n", auto_pass);
+
+                printf("Enter notes: ");
+                if (!fgets(notes, sizeof(notes), stdin))
+                    break;
+                notes[strcspn(notes, "\n")] = '\0';
+
+                printf("Enter URL: ");
+                if (!fgets(url, sizeof(url), stdin))
+                    break;
+                url[strcspn(url, "\n")] = '\0';
+
+                add_entry(v, email, auto_pass, notes, url);
+                printf("Entry added.\n");
+                break;
+            }
+            case CMD_MODIFY: {
+                char index_str[16];
+                printf("Enter index to modify: ");
+                if (!fgets(index_str, sizeof(index_str), stdin))
+                    break;
+                int index = atoi(index_str);
+
+                printf("Enter new notes: ");
+                char new_notes[256];
+                if (!fgets(new_notes, sizeof(new_notes), stdin))
+                    break;
+                new_notes[strcspn(new_notes, "\n")] = '\0';
+
+                const char *parse_end = NULL;
+                cJSON *json_array = cJSON_ParseWithLengthOpts((char*)v->data, v->data_length, &parse_end, 0);
+                if (!json_array) {
+                    printf("Error parsing vault for modification.\n");
+                } else {
+                    cJSON *entry = cJSON_GetArrayItem(json_array, index);
+                    if (entry) {
+                        cJSON *notes_obj = cJSON_GetObjectItem(entry, "notes");
+                        if (notes_obj) {
+                            cJSON_SetValuestring(notes_obj, new_notes);
+                        } else {
+                            cJSON_AddStringToObject(entry, "notes", new_notes);
+                        }
+                        char* updated_data = cJSON_PrintUnformatted(json_array);
+                        if (updated_data) {
+                            secure_free(v->data, v->data_length);
+                            int new_length = strlen(updated_data);
+                            v->data = (unsigned char*)secure_malloc(new_length + 1);
+                            memcpy(v->data, updated_data, new_length + 1);
+                            v->data_length = new_length;
+                            free(updated_data);
+                            printf("Entry modified.\n");
+                        }
+                    } else {
+                        printf("No entry at index %d.\n", index);
+                    }
+                    cJSON_Delete(json_array);
+                }
+                break;
+            }
+            case CMD_INFO: {
+                char index_str[16];
+                printf("Enter index for info: ");
+                if (!fgets(index_str, sizeof(index_str), stdin))
+                    break;
+                int index = atoi(index_str);
+
+                const char *parse_end = NULL;
+                cJSON *json_array = cJSON_ParseWithLengthOpts((char*)v->data, v->data_length, &parse_end, 0);
+                if (!json_array) {
+                    printf("Error parsing vault.\n");
+                } else {
+                    cJSON *entry = cJSON_GetArrayItem(json_array, index);
+                    if (entry) {
+                        cJSON *email_obj = cJSON_GetObjectItem(entry, "email");
+                        cJSON *pass_obj  = cJSON_GetObjectItem(entry, "password");
+                        printf("Username/Email: %s\n", email_obj ? email_obj->valuestring : "(none)");
+                        printf("Password: %s\n", pass_obj ? pass_obj->valuestring : "(none)");
+                    } else {
+                        printf("No entry at index %d.\n", index);
+                    }
+                    cJSON_Delete(json_array);
+                }
+                break;
+            }
+            case CMD_WRITE: {
+                encrypt_vault(v, key);
+                write_vault(v, directory);
+                decrypt_vault(v, key);
+                break;
+            }
+            case CMD_EDIT: {
+                /* Create a temporary file template (must end in XXXXXX for mkstemp) */
+                char template[] = "/tmp/vaultjsonXXXXXX";
+                int fd = mkstemp(template);
+                if(fd < 0) {
+                    perror("mkstemp failed");
+                    break;
+                }
+                
+                /* Write the current decrypted JSON data into the temporary file. */
+                write(fd, (char*)v->data, v->data_length);
+                close(fd);
+                
+                /* Build and execute the command to open Vim on the temporary file */
+                char vimCmd[256];
+                snprintf(vimCmd, sizeof(vimCmd), "vim %s", template);
+                system(vimCmd);
+                
+                /* After Vim exits, re-read the file contents */
+                FILE *f = fopen(template, "r");
+                if(!f){
+                    perror("fopen failed");
+                    break;
+                }
+                fseek(f, 0, SEEK_END);
+                long fsize = ftell(f);
+                rewind(f);
+                /* Allocate temporary buffer with malloc because we will later copy into secure memory */
+                char *temp_buffer = malloc(fsize + 1);
+                if(!temp_buffer){
+                    perror("malloc failed");
+                    fclose(f);
+                    break;
+                }
+                fread(temp_buffer, 1, fsize, f);
+                temp_buffer[fsize] = '\\0';
+                fclose(f);
+                unlink(template);
+                
+                /* Allocate new secure memory for the edited JSON */
+                unsigned char *new_data = secure_malloc(fsize + 1);
+                if(!new_data) {
+                    perror("secure_malloc failed");
+                    free(temp_buffer);
+                    break;
+                }
+                memcpy(new_data, temp_buffer, fsize + 1);
+                free(temp_buffer);
+                
+                /* Free the old vault data using secure_free */
+                secure_free(v->data, v->data_length);
+                v->data = new_data;
+                v->data_length = fsize;
+                printf("Vault updated with edited JSON.\\n");
+                break;
+            }
+            case CMD_EXIT:
+                running = 0;
+                break;
+            default:
+                printf("Unknown command. Available commands: list, add, modify, info, write, exit.\n");
         }
     }
 
     printf("Exiting pman\n");
-
-    // Re-encrypt the vault.
     encrypt_vault(v, key);
-
-    // Write the vault back to disk.
     write_vault(v, directory);
-
-    // Free allocated sensitive memory.
     secure_free(v->data, v->data_length);
     secure_free(v, sizeof(vault));
-
-    // Free the generated key (assuming 32 bytes were allocated).
     secure_free(key, 32);
 }
 

@@ -236,7 +236,7 @@ void write_vault(vault* v, char* directory){
         printf("Failed to use fseek\n");
     }
 
-    printf("Data size to be written %d\n\n", v->data_length);
+    printf("Wrote %d bytes to %s\n\n", v->data_length, directory);
     fwrite(v->data, sizeof(unsigned char), v->data_length, fptr);
     fclose(fptr);
 

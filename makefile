@@ -23,3 +23,8 @@ build/main: $(dep_files)
 build/test: $(dep_files)
 	@echo "Making test file"
 	gcc -I/usr/bin/include -o build/test -g $(src_files_test) $(CFLAGS)
+
+all: $(dep_files)
+	@echo "Making all"
+	make build/test
+	make build/main

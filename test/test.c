@@ -79,9 +79,59 @@ void create_vault(){
     print_vault(read_v);
 }
 
+void test_pipe_json(){
+    printf("Starting test: pipe JSON to Vim\n");
+    vault* v = init_vault();
+    add_entry(v, "bob@bob.com", "1245", "this is a password", "bob.com");
+    print_vault(v);
+
+    // Create a temporary file template (must end in XXXXXX for mkstemp)
+    char template[] = "/tmp/vaultjsonXXXXXX";
+    int fd = mkstemp(template);
+    if(fd < 0) {
+        perror("mkstemp failed");
+        return;
+    }
+
+    // Write the JSON data (assumed to be null-terminated) into the temporary file
+    write(fd, (char*)v->data, strlen((char*)v->data));
+    write(fd, "\n", 1);
+    close(fd);
+
+    // Build and execute command to open vim on the temporary file
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "vim %s", template);
+    system(cmd);
+
+    // After Vim exits, re-read the file contents
+    FILE *f = fopen(template, "r");
+    if(!f){
+        perror("fopen failed");
+        return;
+    }
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    rewind(f);
+    char *buffer = malloc(fsize + 1);
+    if(!buffer){
+        perror("malloc failed");
+        fclose(f);
+        return;
+    }
+    fread(buffer, 1, fsize, f);
+    buffer[fsize] = '\0';
+    fclose(f);
+
+    printf("Edited JSON:\n%s\n", buffer);
+    free(buffer);
+    // Clean up by removing the temporary file
+    unlink(template);
+}
+
 int main(){
+    
     // test_basic_vault_func();
-    // printf("Done basic functionality test!");
+    printf("Done basic functionality test!");
 
     // printf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
     // test_file_writing_reading();
@@ -89,7 +139,10 @@ int main(){
 
     // test_basic_vault_func();
     // test_file_writing_reading();
-    create_vault();
+    // create_vault();
+    printf("Testing pipe!\n");
+    test_pipe_json();
+    
     // test_writing_json();
     // secure_print("hello", 5);
     // char* password;
