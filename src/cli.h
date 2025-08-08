@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cjson/cJSON.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -7,7 +8,7 @@
 #include "vault.h"
 
 #define n_loop(n) for (int i = 0; i < n; i++)
-#define PASSWORD_BYTES 16
+#define PASSWORD_BYTES 32
 
 typedef struct {
     char* identifier;
@@ -110,12 +111,12 @@ void gen_secure_password(char* buffer, size_t buf_size) {
         return;
     }
     // Convert each random byte into two hex characters
-    const char hex_chars[] = "0123456789ABCDEF";
+
+    const char hex_chars[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()[]{},./?~`";
     for (int i = 0; i < PASSWORD_BYTES; i++) {
-        buffer[i*2] = hex_chars[(rand_bytes[i] >> 4) & 0x0F];
-        buffer[i*2 + 1] = hex_chars[rand_bytes[i] & 0x0F];
+        buffer[i] = hex_chars[rand() % (82)];
     }
-    buffer[PASSWORD_BYTES * 2] = '\0';
+    buffer[PASSWORD_BYTES] = '\0';
 }
 
 void repl(char* directory) {
@@ -141,8 +142,6 @@ void repl(char* directory) {
         secure_free(password, 100);
         return;
     }
-    printf("\t\tKEY");
-    print_bytes(key, 32);
 
     // Decrypt the vault using the provided key.
     decrypt_vault(v, key);
@@ -150,6 +149,15 @@ void repl(char* directory) {
     // Clear and free the vault password.
     memset(password, 0, strlen(password));
     secure_free(password, 100);
+
+    const char *parse_end = NULL;
+    cJSON *json_array = cJSON_ParseWithLengthOpts((char*)v->data, v->data_length, &parse_end, 0);
+    if (!json_array){
+        printf("Wrong password\n");
+        // printf("Raw data: ");
+        // print_bytes(v->data, v->data_length);
+        return;
+    }
 
     printf("Vault open. Available commands: list, add, modify, exit\n");
     print_bytes(v->data, v->data_length);
@@ -174,7 +182,8 @@ void repl(char* directory) {
                 for (int i = 0; i < count; i++){
                     cJSON *entry = cJSON_GetArrayItem(json_array, i);
                     char* entry_str = cJSON_PrintUnformatted(entry);
-                    printf("[%d] %s\n", i, entry_str);
+                    cJSON *url = cJSON_GetObjectItem(entry, entry_field_string[URL]);
+                    printf("[%d] %s\n", i, cJSON_PrintUnformatted(url));
                     free(entry_str);
                 }
                 cJSON_Delete(json_array);
@@ -255,6 +264,11 @@ void repl(char* directory) {
                 cJSON_Delete(json_array);
             }
         }
+        else if (strcmp(command, "write") == 0){
+            encrypt_vault(v, key);
+            write_vault(v, directory);
+            decrypt_vault(v, key);
+        }
         else if (strcmp(command, "exit") == 0) {
             break;
         }
@@ -263,7 +277,7 @@ void repl(char* directory) {
         }
     }
 
-    printf("Exiting REPL.\n");
+    printf("Exiting pman\n");
 
     // Re-encrypt the vault.
     encrypt_vault(v, key);
@@ -280,6 +294,25 @@ void repl(char* directory) {
 }
 
 
+void init(int argc, char* argv[]){
+    if (argc != 1){
+        printf("Expected 1 argument for init, got %d", argc);
+        return;
+    }
+
+    // Initializing vault
+    vault* v = init_vault();
+    print_vault(v);
+    char* password = (char*)secure_malloc(100);
+    secure_read(&password, "Enter new vault password: ");
+    unsigned char* key;
+    key = generate_key_256(password, strlen(password), v->salt, key);
+    encrypt_vault(v, key);
+    print_vault(v);
+
+    printf("Wrote vault file\n");
+    write_vault(v, argv[0]);
+}
 
 void help(int argc, char* argv[]){
     print_help();
@@ -298,5 +331,6 @@ void open(int argc, char* argv[]){
 
 void add_tools(){
     add_tool("help", &help, "prints this message and then exits");
-    add_tool("open", &open, "opens a vault, must pass a directory or it will error");
+    add_tool("open", &open, "opens a vault, must pass a directory or it will error. Usage is `pman open file.vault`");
+    add_tool("init", &init, "initializes a vault, usage   `pman init file.vault`");
 }

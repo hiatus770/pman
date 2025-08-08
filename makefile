@@ -17,6 +17,8 @@ src_files_test=$(wildcard ./test/*.c)
 build/main: $(dep_files)
 	@echo "Making main c file"
 	gcc -I/usr/bin/include -o build/main -g $(src_files) $(CFLAGS)
+	sudo mv build/main /usr/local/bin/pman
+
 
 build/test: $(dep_files)
 	@echo "Making test file"

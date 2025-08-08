@@ -115,8 +115,6 @@ unsigned char* generate_key_256(char* password, int p_length, unsigned char* sal
     // Assume the key has already been allocated with a length of 256 bits
     PKCS5_PBKDF2_HMAC(password, p_length, salt, SALT_SIZE, 100000, EVP_sha256(), key_len, key);
 
-    printf("\nGenerated key with pass %s", password);
-    print_bytes(key, 32);
     return key;
 }
 
@@ -302,8 +300,6 @@ void encrypt_vault(vault* v, unsigned char* key) {
         return;
     }
 
-    printf("USING KEY: ");
-    print_bytes(key, 32);
 
     if (!EVP_EncryptInit_ex(encrypt, EVP_aes_256_gcm(), NULL, key, v->iv)) {
         printf("EncryptInit failed\n");
@@ -380,7 +376,6 @@ vault* init_vault(){
 }
 
 void decrypt_vault(vault* v, unsigned char* key){
-    printf("Decrypting...\n");
     // What this will do is change the unsigned char data
     if (v->state == DECRYPTED){
         printf("Cannot decrypt decrypted vault");
@@ -401,5 +396,4 @@ void decrypt_vault(vault* v, unsigned char* key){
 
     v->data = plaintext;
     v->data_length = p_len + f_len;
-    printf("Done decrypting\n");
 }
