@@ -65,11 +65,16 @@ int find_next_keyword(char* argv[], int cur_ind, int argc){
 }
 
 void parse_input(int argc, char* argv[]){
-    printf("Calling parse input!\n");
-    n_loop(argc){
-        printf("\t%d:%s\t",i, argv[i]);
+    if (DEBUG){
+        printf("Calling parse input!\n");
+    };
+    
+    if (DEBUG) {
+        n_loop(argc){
+            printf("\t%d:%s\t",i, argv[i]);
+        }
+        printf("\n");
     }
-    printf("\n");
     if (argc == 1){
         print_help();
         return;
@@ -193,15 +198,26 @@ void repl(char* directory) {
                 break;
             }
             case CMD_ADD: {
-                char email[256], notes[256], url[256];
+                char email[256], password[256], notes[256], url[256];
                 printf("Enter email: ");
                 if (!fgets(email, sizeof(email), stdin))
                     break;
                 email[strcspn(email, "\n")] = '\0';
 
+
+                printf("Enter password (leave blank to autogenerate): ");
+                int generated = 0;
                 char auto_pass[(PASSWORD_BYTES * 2) + 1];
-                gen_secure_password(auto_pass, sizeof(auto_pass));
-                printf("Using auto-generated secure password: %s\n", auto_pass);
+                if (!fgets(password, sizeof(password), stdin))
+                    break;
+                if (strcmp("\n", password) == 0){
+                    generated = 1;
+                    gen_secure_password(auto_pass, sizeof(auto_pass));
+                    printf("Using auto-generated secure password: %s\n", auto_pass);
+                } else {
+                    password[strcspn(password, "\n")] = '\0';
+                }
+
 
                 printf("Enter notes: ");
                 if (!fgets(notes, sizeof(notes), stdin))
@@ -213,7 +229,8 @@ void repl(char* directory) {
                     break;
                 url[strcspn(url, "\n")] = '\0';
 
-                add_entry(v, email, auto_pass, notes, url);
+
+                add_entry(v, email, (generated == 1) ? auto_pass : password, notes, url);
                 printf("Entry added.\n");
                 break;
             }
@@ -299,16 +316,16 @@ void repl(char* directory) {
                     perror("mkstemp failed");
                     break;
                 }
-                
+
                 /* Write the current decrypted JSON data into the temporary file. */
                 write(fd, (char*)v->data, v->data_length);
                 close(fd);
-                
+
                 /* Build and execute the command to open Vim on the temporary file */
                 char vimCmd[256];
                 snprintf(vimCmd, sizeof(vimCmd), "vim %s", template);
                 system(vimCmd);
-                
+
                 /* After Vim exits, re-read the file contents */
                 FILE *f = fopen(template, "r");
                 if(!f){
@@ -329,7 +346,7 @@ void repl(char* directory) {
                 temp_buffer[fsize] = '\\0';
                 fclose(f);
                 unlink(template);
-                
+
                 /* Allocate new secure memory for the edited JSON */
                 unsigned char *new_data = secure_malloc(fsize + 1);
                 if(!new_data) {
@@ -339,7 +356,7 @@ void repl(char* directory) {
                 }
                 memcpy(new_data, temp_buffer, fsize + 1);
                 free(temp_buffer);
-                
+
                 /* Free the old vault data using secure_free */
                 secure_free(v->data, v->data_length);
                 v->data = new_data;
@@ -393,10 +410,12 @@ void open(int argc, char* argv[]){
         printf("No arguments passed into open, exiting\n");
         return;
     }
-    printf("argc %d for function call open\n", argc);
+    if (DEBUG) printf("argc %d for function call open\n", argc);
     if (argc == 1){
-        repl(argv[0]);
+        repl(argv[0]); return; 
     }
+    
+    printf("Too many arguments for open"); 
 }
 
 void add_tools(){

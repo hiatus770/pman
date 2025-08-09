@@ -1,3 +1,4 @@
+#define DEBUG 0
 #include <sched.h>
 #include <stdlib.h>
 #include <stdio.h>

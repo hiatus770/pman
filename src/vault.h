@@ -137,7 +137,6 @@ vault* get_vault(char* directory){
     v->state = ENCRYPTED;
 
     // This will decrypt based on the file directory passed, should be a relative or full path
-    printf("Opening vault %s\n", directory);
     FILE *fptr;
     fptr = fopen(directory, "rb");
 
@@ -153,7 +152,7 @@ vault* get_vault(char* directory){
     }
 
     long file_size = ftell(fptr);
-    printf("File size from ftell: %ld\n", file_size);
+    printf("File size: %ld\n", file_size);
 
     if (file_size == -1L){
         printf("ftell failed");
@@ -173,9 +172,9 @@ vault* get_vault(char* directory){
         printf("seek set failed");
     }
 
-    printf("Reading salt at %ld\n", ftell(fptr));
+    if (DEBUG) printf("Reading salt at %ld\n", ftell(fptr));
     fread(v->salt, 1, 32, fptr); // Read the salt
-    printf("Reading iv at %ld\n", ftell(fptr));
+    if (DEBUG) printf("Reading iv at %ld\n", ftell(fptr));
     fread(v->iv, 1, 16, fptr); // Read the initialization vector
 
     if (fseek(fptr, SALT_SIZE + IV_SIZE, SEEK_SET) != 0){
@@ -184,24 +183,26 @@ vault* get_vault(char* directory){
 
     size_t bytes_read = fread(v->data, 1, file_size, fptr);
     v->data_length = bytes_read;
-    printf("Raw bytes %d: ", bytes_read);
-    for (size_t i = 0; i < bytes_read; i++){
-        printf("%02X ", v->data[i]); // Print out each of the bytes
-    }
-    printf("\n");
+    if (DEBUG){
+        printf("Raw bytes %d: ", bytes_read);
+        for (size_t i = 0; i < bytes_read; i++){
+            printf("%02X ", v->data[i]); // Print out each of the bytes
+        }
+        printf("\n");
+        
+        printf("Salt: ");
+        for(size_t i = 0; i < SALT_SIZE; i++){
+            printf("%02X ", v->salt[i]);
+        }
+        printf("\n");
+    
+        printf("IV: ");
+        for(size_t i = 0; i < IV_SIZE; i++){
+            printf("%02X ", v->iv[i]);
+        }
+        printf("\n");
 
-    printf("Salt: ");
-    for(size_t i = 0; i < SALT_SIZE; i++){
-        printf("%02X ", v->salt[i]);
     }
-    printf("\n");
-
-    printf("IV: ");
-    for(size_t i = 0; i < IV_SIZE; i++){
-        printf("%02X ", v->iv[i]);
-    }
-    printf("\n");
-
     return v;
 }
 
