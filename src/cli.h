@@ -68,7 +68,7 @@ void parse_input(int argc, char* argv[]){
     if (DEBUG){
         printf("Calling parse input!\n");
     };
-    
+
     if (DEBUG) {
         n_loop(argc){
             printf("\t%d:%s\t",i, argv[i]);
@@ -170,7 +170,7 @@ void repl(char* directory) {
         if (len > 0 && command[len - 1] == '\n')
             command[len - 1] = '\0';
 
-        enum { CMD_UNKNOWN, CMD_LIST, CMD_ADD, CMD_MODIFY, CMD_INFO, CMD_WRITE, CMD_EDIT, CMD_EXIT } cmd = CMD_UNKNOWN;
+        enum { CMD_UNKNOWN, CMD_LIST, CMD_ADD, CMD_MODIFY, CMD_INFO, CMD_WRITE, CMD_EDIT, CMD_EXIT, CMD_COPY } cmd = CMD_UNKNOWN;
         if (strcmp(command, "list") == 0) cmd = CMD_LIST;
         else if (strcmp(command, "add") == 0) cmd = CMD_ADD;
         else if (strcmp(command, "modify") == 0) cmd = CMD_MODIFY;
@@ -178,6 +178,8 @@ void repl(char* directory) {
         else if (strcmp(command, "write") == 0) cmd = CMD_WRITE;
         else if (strcmp(command, "edit") == 0) cmd = CMD_EDIT;
         else if (strcmp(command, "exit") == 0) cmd = CMD_EXIT;
+        else if (strcmp(command, "copy") == 0) cmd = CMD_COPY;
+
 
         switch (cmd) {
             case CMD_LIST: {
@@ -364,6 +366,36 @@ void repl(char* directory) {
                 printf("Vault updated with edited JSON.\\n");
                 break;
             }
+            case CMD_COPY:
+            {
+
+                char index_str[16];
+                printf("Enter index for copy: ");
+                if (!fgets(index_str, sizeof(index_str), stdin))
+                    break;
+                int index = atoi(index_str);
+
+                const char *parse_end = NULL;
+                cJSON *json_array = cJSON_ParseWithLengthOpts((char*)v->data, v->data_length, &parse_end, 0);
+                if (!json_array) {
+                    printf("Error parsing vault.\n");
+                } else {
+                    cJSON *entry = cJSON_GetArrayItem(json_array, index);
+                    if (entry) {
+                        cJSON *email_obj = cJSON_GetObjectItem(entry, "email");
+                        cJSON *pass_obj  = cJSON_GetObjectItem(entry, "password");
+                        char copy_cmd[256];
+                        snprintf(copy_cmd, sizeof(copy_cmd), "wl-copy %s", cJSON_PrintUnformatted(pass_obj));
+                        system(copy_cmd);
+                    } else {
+                        printf("No entry at index %d.\n", index);
+                    }
+                    cJSON_Delete(json_array);
+                }
+                printf("Copied to clipboard");
+                break;
+
+            }
             case CMD_EXIT:
                 running = 0;
                 break;
@@ -412,10 +444,10 @@ void open(int argc, char* argv[]){
     }
     if (DEBUG) printf("argc %d for function call open\n", argc);
     if (argc == 1){
-        repl(argv[0]); return; 
+        repl(argv[0]); return;
     }
-    
-    printf("Too many arguments for open"); 
+
+    printf("Too many arguments for open");
 }
 
 void add_tools(){
