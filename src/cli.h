@@ -79,6 +79,7 @@ void parse_input(int argc, char* argv[]){
         print_help();
         return;
     }
+
     // We want to split by identifier, so we basically just pass the argc and argv split on the fact if its an actual like tool we let them use
     int index = 1;
     while (index < argc){
@@ -89,7 +90,6 @@ void parse_input(int argc, char* argv[]){
             // printf("\tFinding next keyword!\n");
             int next_ind = find_next_keyword(argv, index, argc);
             // printf("Next ind is %d\n", next_ind);
-
             char* args[next_ind - index];
             n_loop(next_ind - index - 1)
             {
@@ -118,6 +118,7 @@ void gen_secure_password(char* buffer, size_t buf_size) {
     // Convert each random byte into two hex characters
 
     const char hex_chars[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()[]{},./?~`";
+    srand(time(NULL));
     for (int i = 0; i < PASSWORD_BYTES; i++) {
         buffer[i] = hex_chars[rand() % (82)];
     }
@@ -193,7 +194,8 @@ void repl(char* directory) {
                     for (int i = 0; i < count; i++) {
                         cJSON *entry = cJSON_GetArrayItem(json_array, i);
                         cJSON *url = cJSON_GetObjectItem(entry, entry_field_string[URL]);
-                        printf("[%d] %s\n", i, cJSON_PrintUnformatted(url));
+                        cJSON *username = cJSON_GetObjectItem(entry, entry_field_string[EMAIL]);
+                        printf("[%d] %s\t%s\n", i, cJSON_PrintUnformatted(url), cJSON_PrintUnformatted(username));
                     }
                     cJSON_Delete(json_array);
                 }
