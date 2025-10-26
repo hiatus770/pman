@@ -130,11 +130,11 @@ void test_pipe_json(){
 
 int main(){
     
-    // test_basic_vault_func();
+    test_basic_vault_func();
     printf("Done basic functionality test!");
 
     // printf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
-    // test_file_writing_reading();
+    test_file_writing_reading();
     // printf("Done file writing test!");
 
     // test_basic_vault_func();

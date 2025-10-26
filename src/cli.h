@@ -54,9 +54,10 @@ int get_tool(char* identifier){
 }
 
 int find_next_keyword(char* argv[], int cur_ind, int argc){
-    // printf("Finding keyword!\n");
+    if (DEBUG){
+        printf("Finding keyword!\n");
+    }
     for (int i = cur_ind+1; i < argc; i++){
-        // printf("argv[%d] = %s\n", i, argv[i] ? argv[i] : "NULL");
         if (is_keyword(argv[i]) == 1){
             return i;
         }
@@ -75,6 +76,7 @@ void parse_input(int argc, char* argv[]){
         }
         printf("\n");
     }
+
     if (argc == 1){
         print_help();
         return;
@@ -83,13 +85,16 @@ void parse_input(int argc, char* argv[]){
     // We want to split by identifier, so we basically just pass the argc and argv split on the fact if its an actual like tool we let them use
     int index = 1;
     while (index < argc){
-        if (find_next_keyword(argv, index-1, argc) < argc+1){
+        if (find_next_keyword(argv, index-1, argc) < argc){
+
             index = find_next_keyword(argv, index-1, argc);
-            // printf("Keyword at %d\n", index);
+
+            if (DEBUG){
+                printf("Keyword at %d\n", index);
+            }
+
             // Now that we have the new keyword we need to call the correct function only after we chose the correct elems
-            // printf("\tFinding next keyword!\n");
             int next_ind = find_next_keyword(argv, index, argc);
-            // printf("Next ind is %d\n", next_ind);
             char* args[next_ind - index];
             n_loop(next_ind - index - 1)
             {
@@ -99,9 +104,10 @@ void parse_input(int argc, char* argv[]){
 
             index = next_ind;
 
-
         } else {
-            printf("idk how you got here\n");
+            printf("Wrong usage of pman\n");
+            print_help();
+            break;
         }
     }
 
@@ -347,7 +353,7 @@ void repl(char* directory) {
                     break;
                 }
                 fread(temp_buffer, 1, fsize, f);
-                temp_buffer[fsize] = '\\0';
+                temp_buffer[fsize] = '\0';
                 fclose(f);
                 unlink(template);
 
