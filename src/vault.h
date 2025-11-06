@@ -189,13 +189,13 @@ vault* get_vault(char* directory){
             printf("%02X ", v->data[i]); // Print out each of the bytes
         }
         printf("\n");
-        
+
         printf("Salt: ");
         for(size_t i = 0; i < SALT_SIZE; i++){
             printf("%02X ", v->salt[i]);
         }
         printf("\n");
-    
+
         printf("IV: ");
         for(size_t i = 0; i < IV_SIZE; i++){
             printf("%02X ", v->iv[i]);
@@ -261,10 +261,6 @@ void add_entry(vault* v, char* email, char* password, char* notes, char* url){
         printf("Successfullly parsed json data\n");
     }
 
-    printf("Freeing %d\n", v->data_length);
-
-    secure_free(v->data, v->data_length);
-
     cJSON *new_entry = cJSON_CreateObject();
     cJSON_AddStringToObject(new_entry, entry_field_string[EMAIL], email);
     cJSON_AddStringToObject(new_entry, entry_field_string[PASSWORD], password);
@@ -273,15 +269,74 @@ void add_entry(vault* v, char* email, char* password, char* notes, char* url){
 
     cJSON_AddItemToArray(json_array, new_entry);
     char *updated_data = cJSON_PrintUnformatted(json_array);
+
+    if (updated_data != nullptr){
+        printf("Freeing %d\n", v->data_length);
+        secure_free(v->data, v->data_length);
+    }
+
     v->data_length = strlen(updated_data);
     v->data = (unsigned char*)secure_malloc(v->data_length);
     memcpy(v->data, updated_data, v->data_length);
 
     // Clean up
-    // free(updated_data);
+    free(updated_data);
     cJSON_Delete(json_array);
 
     printf("Added entry to vault\n");
+}
+
+void remove_entry(vault* v, int entry_index){
+    if (v->state == ENCRYPTED){
+        return;
+    } else {
+        printf("Removing entry from file");
+    }
+    // Initialize the json from the string
+    const char *parse_end = NULL;
+    cJSON *json_array = cJSON_ParseWithLengthOpts((char*)v->data, v->data_length, &parse_end, 0);
+    if (!json_array){
+        printf("Error parsing JSON data from the vault with length opts!\n");
+        return;
+    } else {
+        printf("Successfully parsed json data\n");
+    }
+
+    // Check if the entry_index is valid
+    int array_size = cJSON_GetArraySize(json_array);
+    if (entry_index < 0 || entry_index >= array_size) {
+        printf("Error: Invalid entry index %d. Array has %d entries.\n", entry_index, array_size);
+        cJSON_Delete(json_array);
+        return;
+    }
+
+    // Remove the item at the specified index
+    cJSON *removed_item = cJSON_DetachItemFromArray(json_array, entry_index);
+    if (removed_item) {
+        cJSON_Delete(removed_item);
+        printf("Successfully removed entry at index %d\n", entry_index);
+    } else {
+        printf("Failed to remove entry at index %d\n", entry_index);
+        cJSON_Delete(json_array);
+        return;
+    }
+
+    char *updated_data = cJSON_PrintUnformatted(json_array);
+
+    if (updated_data != nullptr){
+        printf("Freeing %d\n", v->data_length);
+        secure_free(v->data, v->data_length);
+    }
+
+    v->data_length = strlen(updated_data);
+    v->data = (unsigned char*)secure_malloc(v->data_length);
+    memcpy(v->data, updated_data, v->data_length);
+
+    // Clean up
+    free(updated_data);
+    cJSON_Delete(json_array);
+
+    printf("Removed entry from vault\n");
 }
 
 // This will be used to add extra passwords, add extra stuff here too
@@ -382,7 +437,6 @@ void decrypt_vault(vault* v, unsigned char* key){
         printf("Cannot decrypt decrypted vault");
         return;
     }
-    v->state = DECRYPTED;
 
     int p_len = v->data_length;
     int f_len = 0;
@@ -395,6 +449,33 @@ void decrypt_vault(vault* v, unsigned char* key){
     EVP_DecryptUpdate(decrypt, plaintext, &p_len, v->data, v->data_length);
     EVP_DecryptFinal_ex(decrypt, plaintext + p_len, &f_len);
 
-    v->data = plaintext;
-    v->data_length = p_len + f_len;
+    // Validate that the decrypted data is valid JSON before updating vault state
+    int total_len = p_len + f_len;
+
+    // Null-terminate the decrypted data for JSON parsing
+    unsigned char *null_terminated_data = (unsigned char*)secure_malloc(total_len + 1);
+    memcpy(null_terminated_data, plaintext, total_len);
+    null_terminated_data[total_len] = '\0';
+
+    // Test JSON parsing
+    const char *parse_end = NULL;
+    cJSON *json_test = cJSON_ParseWithLengthOpts((char*)null_terminated_data, total_len, &parse_end, 0);
+
+    if (!json_test) {
+        printf("Error: Decryption produced invalid JSON data. Wrong password or corrupted vault.\n");
+        secure_free(plaintext, v->data_length);
+        secure_free(null_terminated_data, total_len + 1);
+        EVP_CIPHER_CTX_free(decrypt);
+        return;
+    }
+
+    // JSON is valid, clean up test and update vault
+    cJSON_Delete(json_test);
+    secure_free(plaintext, v->data_length);
+
+    v->data = null_terminated_data;
+    v->data_length = total_len;
+    v->state = DECRYPTED;
+
+    EVP_CIPHER_CTX_free(decrypt);
 }

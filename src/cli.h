@@ -1,5 +1,9 @@
 #pragma once
 
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+
 #include <cjson/cJSON.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -154,8 +158,14 @@ void repl(char* directory) {
     }
 
     decrypt_vault(v, key);
-    memset(password, 0, strlen(password));
-    secure_free(password, 100);
+    if (v->state == ENCRYPTED){
+        printf("Failed to decrypt vault\n");
+        secure_free(password, 100);
+        return;
+    } else {
+        memset(password, 0, strlen(password));
+        secure_free(password, 100);
+    }
 
     const char *parse_end = NULL;
     cJSON *json_array = cJSON_ParseWithLengthOpts((char*)v->data, v->data_length, &parse_end, 0);
@@ -165,7 +175,7 @@ void repl(char* directory) {
     }
     cJSON_Delete(json_array);
 
-    printf("Vault open. Available commands: list, add, modify, info, write, exit\n");
+    printf("Vault open. Available commands: list, add, modify, info, write, exit, copy\n");
 
     char command[256];
     int running = 1;
@@ -177,7 +187,7 @@ void repl(char* directory) {
         if (len > 0 && command[len - 1] == '\n')
             command[len - 1] = '\0';
 
-        enum { CMD_UNKNOWN, CMD_LIST, CMD_ADD, CMD_MODIFY, CMD_INFO, CMD_WRITE, CMD_EDIT, CMD_EXIT, CMD_COPY } cmd = CMD_UNKNOWN;
+        enum { CMD_UNKNOWN, CMD_REMOVE, CMD_LIST, CMD_ADD, CMD_MODIFY, CMD_INFO, CMD_WRITE, CMD_EDIT, CMD_EXIT, CMD_COPY } cmd = CMD_UNKNOWN;
         if (strcmp(command, "list") == 0) cmd = CMD_LIST;
         else if (strcmp(command, "add") == 0) cmd = CMD_ADD;
         else if (strcmp(command, "modify") == 0) cmd = CMD_MODIFY;
@@ -186,6 +196,7 @@ void repl(char* directory) {
         else if (strcmp(command, "edit") == 0) cmd = CMD_EDIT;
         else if (strcmp(command, "exit") == 0) cmd = CMD_EXIT;
         else if (strcmp(command, "copy") == 0) cmd = CMD_COPY;
+        else if (strcmp(command, "remove") == 0) cmd = CMD_REMOVE;
 
 
         switch (cmd) {
@@ -404,6 +415,20 @@ void repl(char* directory) {
                 break;
 
             }
+            case CMD_REMOVE:
+            {
+                char index_str[16];
+                printf("Enter index to remove:" );
+                if (!fgets(index_str, sizeof(index_str), stdin)){
+                    break;
+                }
+
+                int index = atoi(index_str);
+
+                remove_entry(v, index);
+
+                break;
+            }
             case CMD_EXIT:
                 running = 0;
                 break;
@@ -458,8 +483,169 @@ void open(int argc, char* argv[]){
     printf("Too many arguments for open");
 }
 
+void guiopen(int argc, char* argv[]){
+
+}
+
+char* remove_quotes(char* str){
+    if (!str) return str;
+
+    size_t len = strlen(str);
+    if (len >= 2 && str[0] == '"' && str[len-1] == '"') {
+        str[len-1] = '\0';  // Remove trailing quote
+        return str + 1;     // Skip leading quote
+    }
+    return str;
+};
+
+
+void bulkadd(int argc, char* argv[]){
+    if (argc != 2){
+        printf("Expected 2 arguments for bulkadd: <csv_file> <vault_file>, got %d\n", argc);
+        printf("Usage: pman bulkadd passwords.csv vault.vault\n");
+        return;
+    }
+
+    char* csv_file = argv[0];
+    char* vault_file = argv[1];
+
+    // Check if CSV file exists
+    FILE* csv_fptr = fopen(csv_file, "r");
+    if (!csv_fptr) {
+        printf("Error: Could not open CSV file '%s'\n", csv_file);
+        return;
+    }
+
+    vault* v = NULL;
+    unsigned char* key = NULL;
+    char* password = (char*)secure_malloc(200);
+
+    // Check if vault file exists
+    FILE* vault_check = fopen(vault_file, "r");
+    if (!vault_check) {
+        // Vault doesn't exist, create a new one
+        printf("Vault file '%s' doesn't exist. Creating new vault.\n", vault_file);
+        v = init_vault();
+
+        secure_read(&password, "Enter new vault password: ");
+        key = generate_key_256(password, strlen(password), v->salt, key);
+
+        printf("Created new vault.\n");
+
+    } else {
+        // Vault exists, load it
+        fclose(vault_check);
+        printf("Loading existing vault '%s'\n", vault_file);
+        v = get_vault(vault_file);
+
+        if (!v) {
+            printf("Error: Failed to load vault\n");
+            fclose(csv_fptr);
+            return;
+        }
+
+        secure_read(&password, "Enter vault password: ");
+        key = generate_key_256(password, strlen(password), v->salt, key);
+
+        // Decrypt the vault
+        decrypt_vault(v, key);
+        if (v->state == DECRYPTED){
+            printf("Vault decrypted successfully.\n");
+        } else {
+            printf("Wrong password.\n");
+            return;
+        }
+    }
+
+    if (!v || !key) {
+        printf("Error: Failed to initialize vault or key\n");
+        if (csv_fptr) fclose(csv_fptr);
+        return;
+    }
+
+    // Parse CSV and add entries
+    char line[1024];
+    int entry_count = 0;
+    int line_number = 0;
+
+    printf("Reading CSV file...\n");
+
+    // Skip header line if present (common in password manager exports)
+    if (fgets(line, sizeof(line), csv_fptr)) {
+        line_number++;
+        // Check if this looks like a header (contains common field names)
+        if (strstr(line, "email") || strstr(line, "password") || strstr(line, "url") || strstr(line, "title")) {
+            if (DEBUG){
+                printf("Skipping header line: %s", line);
+            }
+        } else {
+            // Not a header, rewind and process this line
+            fseek(csv_fptr, 0, SEEK_SET);
+            line_number = 0;
+        }
+    }
+
+    while (fgets(line, sizeof(line), csv_fptr)) {
+        line_number++;
+
+        // Remove newline character
+        line[strcspn(line, "\n")] = 0;
+
+        if (strlen(line) == 0) continue; // Skip empty lines
+
+        // Parse CSV line - expecting format: email,password,url,notes
+        // Simple CSV parser (doesn't handle quotes with commas)
+        char* fields[4] = {NULL, NULL, NULL, NULL};
+        char* token = strtok(line, ",");
+
+        int field_count = 0;
+
+        while (token != NULL && field_count < 4) {
+            fields[field_count] = remove_quotes(token);
+            field_count++;
+            token = strtok(NULL, ",");
+        }
+
+        if (field_count < 2) {
+            printf("Warning: Line %d has insufficient fields, skipping\n", line_number);
+            continue;
+        }
+
+        // Default empty strings for missing fields
+        const char* url = fields[0] ? fields[0] : "";
+        const char* email = fields[1] ? fields[1] : "";
+        const char* password_field = fields[2] ? fields[2] : "";
+        const char* notes = fields[3] ? fields[3] : "";
+
+        // Add entry to vault
+        add_entry(v, (char*)email, (char*)password_field, (char*)notes, (char*)url);
+        entry_count++;
+
+        if (DEBUG) {
+            printf("Added entry %d: email='%s', url='%s'\n", entry_count, email, url);
+        }
+    }
+
+    fclose(csv_fptr);
+
+    printf("Successfully added %d entries from CSV file.\n", entry_count);
+
+    // Encrypt and save the vault
+    encrypt_vault(v, key);
+    write_vault(v, vault_file);
+
+    printf("Vault saved to '%s'\n", vault_file);
+
+    // Clean up
+    secure_free(password, 200);
+    // Note: key cleanup should be handled by the vault system
+}
+
+
 void add_tools(){
     add_tool("help", &help, "prints this message and then exits");
     add_tool("open", &open, "opens a vault, must pass a directory or it will error. Usage is `pman open file.vault`");
     add_tool("init", &init, "initializes a vault, usage   `pman init file.vault`");
+    add_tool("guiopen", &guiopen, "opens a vault using the gui");
+    add_tool("bulkadd", &bulkadd, "adds passwords from a password csv file that can be downloaded from a browser");
 }
